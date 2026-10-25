@@ -119,14 +119,14 @@ def get_candidate(commit, token):
         fail("CI job log must contain exactly one candidate digest")
     actual_ci_hash = candidates[0].decode("ascii")
     # The Actions artifact service may be out of storage. Candidate bytes are
-    # staged as a draft prerelease in the SAME private repository, and may only
+    # staged as a published prerelease in the SAME private repository, and may only
     # be signed after the corresponding exact-commit private CI passed.
     tag = "ci-os-candidate-" + commit
     releases = github(f"repos/{SOURCE}/releases?per_page=100", token)
     if not isinstance(releases, list):
         fail("Unexpected private releases API response")
     matches = [r for r in releases if r.get("tag_name") == tag
-               and r.get("draft") is True and r.get("prerelease") is True
+               and r.get("draft") is False and r.get("prerelease") is True
                and r.get("target_commitish") == commit]
     if len(matches) != 1:
         fail("Missing uniquely staged private candidate for reviewed commit")
