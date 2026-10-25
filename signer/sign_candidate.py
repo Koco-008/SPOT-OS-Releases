@@ -27,7 +27,7 @@ def sha(raw):
 
 
 def github(path, token, *, binary=False):
-    if not path.startswith(f"repos/{SOURCE}/actions/"):
+    if not (path.startswith(f"repos/{SOURCE}/actions/") or path.startswith(f"repos/{SOURCE}/releases")):
         fail("Invalid source API path")
     url = "https://api.github.com/" + path
     request = urllib.request.Request(url, headers={
@@ -103,20 +103,34 @@ def get_candidate(commit, token):
     checked = [j for j in jobs.get("jobs", []) if j.get("name") == "verified-os-candidate"]
     if len(checked) != 1 or checked[0].get("conclusion") != "success" or checked[0].get("status") != "completed":
         fail("Private CI job not complete")
-    artifacts = github(f"repos/{SOURCE}/actions/runs/{run['id']}/artifacts?per_page=100", token)
-    expected = "spot-os-candidate-" + commit
-    matching = [a for a in artifacts.get("artifacts", [])
-                if a.get("name") == expected and not a.get("expired")
-                and a.get("workflow_run", {}).get("id") == run["id"]]
-    if len(matching) != 1:
-        fail("Expected exactly one valid CI artifact")
-    artifact = matching[0]
-    raw = github(f"repos/{SOURCE}/actions/artifacts/{artifact['id']}/zip", token, binary=True)
-    files = archive_members(raw, outer=True)
-    proof_file = next((n for n in files if n.endswith("proof.json")), None)
-    if not proof_file:
-        fail("Missing proof")
-    proof = json.loads(files[proof_file])
+    # The Actions artifact service may be out of storage. Candidate bytes are
+    # staged as a draft prerelease in the SAME private repository, and may only
+    # be signed after the corresponding exact-commit private CI passed.
+    tag = "ci-os-candidate-" + commit
+    releases = github(f"repos/{SOURCE}/releases?per_page=100", token)
+    if not isinstance(releases, list):
+        fail("Unexpected private releases API response")
+    matches = [r for r in releases if r.get("tag_name") == tag
+               and r.get("draft") is True and r.get("prerelease") is True
+               and r.get("target_commitish") == commit]
+    if len(matches) != 1:
+        fail("Missing uniquely staged private candidate for reviewed commit")
+    release = matches[0]
+    assets = release.get("assets", [])
+    expected = {"spot-os-0.1.4.zip", "proof.json"}
+    if not isinstance(assets, list) or {a.get("name") for a in assets} != expected or len(assets) != 2:
+        fail("Private staging release must contain exactly two candidate assets")
+    files = {}
+    for asset in assets:
+        name = asset["name"]
+        if (not isinstance(asset.get("id"), int) or asset.get("state") != "uploaded"
+                or not isinstance(asset.get("size"), int) or not 0 < asset["size"] <= MAX):
+            fail("Malformed private staging asset")
+        raw = github(f"repos/{SOURCE}/releases/assets/{asset['id']}", token, binary=True)
+        if len(raw) != asset["size"]:
+            fail("Private staging asset download size mismatch")
+        files[name] = raw
+    proof = json.loads(files["proof.json"])
     if set(proof) != {"schema", "kind", "repository", "source_commit", "version", "asset", "sha256", "size"}:
         fail("Unexpected proof fields")
     if proof["schema"] != 1 or proof["kind"] != "spot-os-ci-candidate" or proof["repository"] != SOURCE or proof["source_commit"] != commit:
@@ -124,10 +138,9 @@ def get_candidate(commit, token):
     version = proof["version"]
     if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", version) or proof["asset"] != f"spot-os-{version}.zip":
         fail("Unexpected candidate version")
-    zipped = [v for k, v in files.items() if k == proof["asset"] or k.endswith("/" + proof["asset"])]
-    if len(zipped) != 1 or len(files) != 2:
-        fail("Unexpected CI artifact contents")
-    payload = zipped[0]
+    if proof["asset"] != "spot-os-0.1.4.zip":
+        fail("Unexpected candidate asset")
+    payload = files[proof["asset"]]
     if len(payload) != proof["size"] or sha(payload) != proof["sha256"]:
         fail("Private CI ZIP differs from proof")
     payloads = archive_members(payload)
