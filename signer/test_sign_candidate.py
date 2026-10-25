@@ -51,7 +51,7 @@ class ReleaseCandidateTests(TestCase):
             11: json.dumps(proof).encode(),
         }
         release = {
-            "tag_name": TAG, "draft": True, "prerelease": True,
+            "tag_name": TAG, "draft": False, "prerelease": True,
             "target_commitish": COMMIT,
             "assets": [
                 {"name": "spot-os-0.1.4.zip", "id": 10, "state": "uploaded", "size": len(assets[10])},
@@ -92,7 +92,7 @@ class ReleaseCandidateTests(TestCase):
         self.assertEqual(p["sha256"], sha(payload))
         self.assertIn(b"mock-test-only", public)
 
-    def test_changed_draft_zip_and_proof_rejected_by_immutable_ci_digest(self):
+    def test_changed_private_release_zip_and_proof_rejected_by_immutable_ci_digest(self):
         proof, payload, assets, release = self.setup_values()
         good_digest = proof["sha256"]
         altered = payload + b"junk"
@@ -140,9 +140,9 @@ class ReleaseCandidateTests(TestCase):
             with self.assertRaisesRegex(RuntimeError, "successful protected main"):
                 signer.get_candidate(COMMIT, "not-a-real-token")
 
-    def test_missing_draft_release_rejected(self):
+    def test_draft_release_is_not_accessible_to_read_only_token(self):
         proof, payload, assets, release = self.setup_values()
-        release["draft"] = False
+        release["draft"] = True
         with mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
             with self.assertRaisesRegex(RuntimeError, "Missing uniquely staged"):
                 signer.get_candidate(COMMIT, "not-a-real-token")
