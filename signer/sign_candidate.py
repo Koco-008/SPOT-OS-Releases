@@ -32,7 +32,7 @@ def github(path, token, *, binary=False):
     url = "https://api.github.com/" + path
     request = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + token,
-        "Accept": "application/vnd.github+json",
+        "Accept": "application/octet-stream" if binary else "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "SPOT-OS-independent-release/1",
     })
@@ -44,7 +44,8 @@ def github(path, token, *, binary=False):
             if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
                 fail("Untrusted artifact redirect")
             # GitHub sends artifact downloads to its signed Azure Blob URLs.
-            if host != "api.github.com" and not re.fullmatch(r"[a-z0-9.-]+\.blob\.core\.windows\.net", host):
+            if (host != "api.github.com" and not host.endswith(".githubusercontent.com")
+                    and not re.fullmatch(r"[a-z0-9.-]+\.blob\.core\.windows\.net", host)):
                 fail("Untrusted artifact storage host")
             new = super().redirect_request(req, fp, code, msg, headers, newurl)
             if new is not None:
