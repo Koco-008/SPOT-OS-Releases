@@ -25,6 +25,8 @@ jobs:
               assert isinstance(v,dict) and isinstance(v.get('jobs'),dict), path
               print('Valid',path)
           PY
+      - name: Provenance and tampering regression tests (mock GitHub, no secrets)
+        run: python -m unittest discover -s signer -p "test_*.py" -v
       - name: Security invariants
         run: |
           python - <<'PY'
