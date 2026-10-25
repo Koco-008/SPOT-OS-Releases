@@ -100,10 +100,23 @@ def get_candidate(commit, token):
     if len(matches) != 1:
         fail("Expected one successful protected main CI run for this exact commit")
     run = matches[0]
+    if not isinstance(run.get("id"), int) or run.get("run_attempt") != 1:
+        fail("Ambiguous CI run attempt")
     jobs = github(f"repos/{SOURCE}/actions/runs/{run['id']}/jobs?per_page=100", token)
     checked = [j for j in jobs.get("jobs", []) if j.get("name") == "verified-os-candidate"]
     if len(checked) != 1 or checked[0].get("conclusion") != "success" or checked[0].get("status") != "completed":
         fail("Private CI job not complete")
+    # A draft release and its proof.json can be replaced after CI finishes.
+    # Bind the downloaded asset to the digest actually printed by the verified
+    # successful build job; Actions logs are managed by GitHub, not release editors.
+    job_id = checked[0].get("id")
+    if not isinstance(job_id, int):
+        fail("Missing GitHub Actions job identity")
+    log = github(f"repos/{SOURCE}/actions/jobs/{job_id}/logs", token, binary=True)
+    candidates = re.findall(rb"(?m)^.*?SPOT_OS_CANDIDATE_SHA256=([a-f0-9]{64})\s*$", log)
+    if len(candidates) != 1:
+        fail("CI job log must contain exactly one candidate digest")
+    actual_ci_hash = candidates[0].decode("ascii")
     # The Actions artifact service may be out of storage. Candidate bytes are
     # staged as a draft prerelease in the SAME private repository, and may only
     # be signed after the corresponding exact-commit private CI passed.
@@ -142,6 +155,8 @@ def get_candidate(commit, token):
     if proof["asset"] != "spot-os-0.1.4.zip":
         fail("Unexpected candidate asset")
     payload = files[proof["asset"]]
+    if proof["sha256"] != actual_ci_hash:
+        fail("Staged private release differs from the successful CI build digest")
     if len(payload) != proof["size"] or sha(payload) != proof["sha256"]:
         fail("Private CI ZIP differs from proof")
     payloads = archive_members(payload)
