@@ -105,6 +105,35 @@ class ReleaseCandidateTests(TestCase):
             with self.assertRaisesRegex(RuntimeError, "CI build digest"):
                 signer.get_candidate(COMMIT, "not-a-real-token")
 
+    def test_http_accept_header_matches_github_resource_type(self):
+        """Job logs return HTTP 415 with an octet-stream Accept header."""
+        from unittest import mock
+        from contextlib import contextmanager
+
+        requests = []
+
+        class Response:
+            status = 200
+            def read(self, size=None):
+                return b"SPOT_OS_CANDIDATE_SHA256=" + b"a" * 64 if size == signer.MAX + 1 else b"{}"
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+
+        class Opener:
+            def open(self, request, timeout=None):
+                requests.append(request)
+                return Response()
+
+        with mock.patch.object(signer.urllib.request, "build_opener", return_value=Opener()):
+            signer.github(f"repos/{signer.SOURCE}/actions/jobs/123/logs", "fake", binary=True)
+            signer.github(f"repos/{signer.SOURCE}/releases/assets/123", "fake", binary=True)
+            signer.github(f"repos/{signer.SOURCE}/actions/runs/123/jobs", "fake")
+        self.assertEqual(requests[0].get_header("Accept"), "application/vnd.github+json")
+        self.assertEqual(requests[1].get_header("Accept"), "application/octet-stream")
+        self.assertEqual(requests[2].get_header("Accept"), "application/vnd.github+json")
+
     def test_run_not_completed_rejected(self):
         proof, payload, assets, release = self.setup_values()
         with mock.patch.object(signer, "github", self.github_mock(proof, assets, release, completed=False)):

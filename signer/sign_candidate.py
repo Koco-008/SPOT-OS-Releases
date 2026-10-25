@@ -32,7 +32,8 @@ def github(path, token, *, binary=False):
     url = "https://api.github.com/" + path
     request = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + token,
-        "Accept": "application/octet-stream" if binary else "application/vnd.github+json",
+        "Accept": ("application/octet-stream" if binary and "/releases/assets/" in path
+                   else "application/vnd.github+json"),
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "SPOT-OS-independent-release/1",
     })
