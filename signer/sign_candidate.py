@@ -132,9 +132,12 @@ def get_candidate(commit, token):
         fail("Missing uniquely staged private candidate for reviewed commit")
     release = matches[0]
     assets = release.get("assets", [])
-    expected = {"spot-os-0.1.4.zip", "proof.json"}
-    if not isinstance(assets, list) or {a.get("name") for a in assets} != expected or len(assets) != 2:
+    if not isinstance(assets, list) or len(assets) != 2:
         fail("Private staging release must contain exactly two candidate assets")
+    asset_names = {a.get("name") for a in assets}
+    candidate_zips = [n for n in asset_names if isinstance(n, str) and re.fullmatch(r"spot-os-0\.[0-9]+\.[0-9]+\.zip", n)]
+    if len(asset_names) != 2 or "proof.json" not in asset_names or len(candidate_zips) != 1:
+        fail("Private staging release has wrong candidate asset names")
     files = {}
     for asset in assets:
         name = asset["name"]
@@ -153,7 +156,7 @@ def get_candidate(commit, token):
     version = proof["version"]
     if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", version) or proof["asset"] != f"spot-os-{version}.zip":
         fail("Unexpected candidate version")
-    if proof["asset"] != "spot-os-0.1.4.zip":
+    if proof["asset"] != candidate_zips[0]:
         fail("Unexpected candidate asset")
     payload = files[proof["asset"]]
     if proof["sha256"] != actual_ci_hash:
@@ -180,6 +183,12 @@ def get_candidate(commit, token):
     return proof, payload, internal, public
 
 
+def release_target_valid(version, sequence, previous, tag):
+    """Only explicitly reviewed predecessor/sequence pairs may be released."""
+    allowed = {("0.1.4", 104, "0.1.3"), ("0.1.5", 105, "0.1.4")}
+    return tag == "os-v" + version and (version, sequence, previous) in allowed
+
+
 def main():
     source = os.environ["SOURCE_COMMIT"]
     approved = os.environ.get("APPROVED_COMMIT", "")
@@ -197,8 +206,8 @@ def main():
         fail("Source commit / channel not approved")
     proof, payload, internal, public = get_candidate(source, token)
     version = proof["version"]
-    if tag != "os-v" + version or previous != "0.1.3" or version != "0.1.4" or sequence != 104:
-        fail("First bootstrap must be exactly OS 0.1.4/104 from 0.1.3")
+    if not release_target_valid(version, sequence, previous, tag):
+        fail("Release must match a reviewed OS version, sequence and exact predecessor")
     if sha(public) != fingerprint:
         fail("Embedded OS trust key fingerprint does not match operator verification")
     from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key, Encoding, PublicFormat
@@ -217,7 +226,8 @@ def main():
         "source_commit": source, "channel": channel,
         "notes": "Protected signed SPOT OS " + version + " hardware candidate",
         "requires_os_min": previous, "requires_os_max": previous,
-        "requires_app_min": "0.28.12", "reader_protocol": 1, "engine": 1,
+        "requires_app_min": "0.28.13" if version == "0.1.5" else "0.28.12",
+        "reader_protocol": 1, "engine": 1,
         "reboot": False,
     }
     raw = (json.dumps(data, sort_keys=True, indent=2) + "\n").encode()

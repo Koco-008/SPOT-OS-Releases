@@ -16,15 +16,15 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def fixture():
+def fixture(version=VERSION):
     files = {
-        "spot_os/VERSION": b"0.1.4\n",
+        "spot_os/VERSION": (version + "\n").encode(),
         "spot_os/trust/spot-os-release.pub": b"mock-test-only-ed25519-public",
-        "spot_os/__init__.py": b"VERSION='0.1.4'\nREVISION='signed-os-updates-1'\n",
+        "spot_os/__init__.py": ("VERSION='" + version + "'\nREVISION='signed-os-updates-1'\n").encode(),
         "spot_os/cli.py": b"def main(): pass\n",
     }
     internal = {
-        "schema": 1, "kind": "os-installer", "version": VERSION,
+        "schema": 1, "kind": "os-installer", "version": version,
         "revision": "signed-os-updates-1", "app_version": "unchanged",
         "base_commit": "b" * 40,
         "files": {name: sha(data) for name, data in files.items()},
@@ -37,15 +37,15 @@ def fixture():
     payload = bio.getvalue()
     proof = {
         "schema": 1, "kind": "spot-os-ci-candidate",
-        "repository": signer.SOURCE, "source_commit": COMMIT, "version": VERSION,
-        "asset": "spot-os-0.1.4.zip", "sha256": sha(payload), "size": len(payload),
+        "repository": signer.SOURCE, "source_commit": COMMIT, "version": version,
+        "asset": "spot-os-" + version + ".zip", "sha256": sha(payload), "size": len(payload),
     }
     return proof, payload, internal
 
 
 class ReleaseCandidateTests(TestCase):
-    def setup_values(self):
-        proof, payload, internal = fixture()
+    def setup_values(self,version=VERSION):
+        proof, payload, internal = fixture(version)
         assets = {
             10: payload,
             11: json.dumps(proof).encode(),
@@ -54,7 +54,7 @@ class ReleaseCandidateTests(TestCase):
             "tag_name": TAG, "draft": False, "prerelease": True,
             "target_commitish": COMMIT,
             "assets": [
-                {"name": "spot-os-0.1.4.zip", "id": 10, "state": "uploaded", "size": len(assets[10])},
+                {"name": proof["asset"], "id": 10, "state": "uploaded", "size": len(assets[10])},
                 {"name": "proof.json", "id": 11, "state": "uploaded", "size": len(assets[11])},
             ],
         }
@@ -91,6 +91,26 @@ class ReleaseCandidateTests(TestCase):
         self.assertEqual(raw, payload)
         self.assertEqual(p["sha256"], sha(payload))
         self.assertIn(b"mock-test-only", public)
+
+    def test_valid_015_ci_binds_exact_candidate_bytes(self):
+        proof, payload, assets, release = self.setup_values("0.1.5")
+        with mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
+            p, raw, inner, public = signer.get_candidate(COMMIT, "not-a-real-token")
+        self.assertEqual(p["version"], "0.1.5")
+        self.assertEqual(p["asset"], "spot-os-0.1.5.zip")
+        self.assertEqual(raw, payload)
+
+    def test_only_reviewed_release_sequences_and_predecessors(self):
+        self.assertTrue(signer.release_target_valid("0.1.4", 104, "0.1.3", "os-v0.1.4"))
+        self.assertTrue(signer.release_target_valid("0.1.5", 105, "0.1.4", "os-v0.1.5"))
+        for version, sequence, previous, tag in (
+            ("0.1.5", 104, "0.1.4", "os-v0.1.5"),
+            ("0.1.5", 105, "0.1.3", "os-v0.1.5"),
+            ("0.1.5", 105, "0.1.5", "os-v0.1.5"),
+            ("0.1.5", 105, "0.1.4", "os-v0.1.4"),
+            ("0.1.6", 106, "0.1.5", "os-v0.1.6"),
+        ):
+            self.assertFalse(signer.release_target_valid(version, sequence, previous, tag))
 
     def test_changed_private_release_zip_and_proof_rejected_by_immutable_ci_digest(self):
         proof, payload, assets, release = self.setup_values()
