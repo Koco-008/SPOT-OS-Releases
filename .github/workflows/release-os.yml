@@ -57,10 +57,13 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" out/spot-os-0.1.4.zip out/os-update.json out/os-update.json.sig out/SHA256SUMS.txt --prerelease --draft --target "$GITHUB_SHA" --title 'SPOT OS 0.1.4 hardware candidate' --notes "Reviewed private source commit: $SOURCE_COMMIT"
+          version="${TAG#os-v}"
+          test "$TAG" = "os-v${version}"
+          test -f "out/spot-os-${version}.zip"
+          gh release create "$TAG" "out/spot-os-${version}.zip" out/os-update.json out/os-update.json.sig out/SHA256SUMS.txt --prerelease --draft --target "$GITHUB_SHA" --title "SPOT OS ${version} hardware OTA candidate" --notes "Reviewed private source commit: $SOURCE_COMMIT"
           gh release edit "$TAG" --draft=false
           mkdir published
           gh release download "$TAG" --dir published
           test "$(find published -maxdepth 1 -type f | wc -l)" -eq 4
-          for file in spot-os-0.1.4.zip os-update.json os-update.json.sig SHA256SUMS.txt; do cmp "out/$file" "published/$file"; done
+          for file in "spot-os-${version}.zip" os-update.json os-update.json.sig SHA256SUMS.txt; do cmp "out/$file" "published/$file"; done
           ( cd published && sha256sum --check SHA256SUMS.txt )
