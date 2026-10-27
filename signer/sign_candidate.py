@@ -183,6 +183,12 @@ def get_candidate(commit, token):
     return proof, payload, internal, public
 
 
+def release_target_valid(version, sequence, previous, tag):
+    """Only explicitly reviewed predecessor/sequence pairs may be released."""
+    allowed = {("0.1.4", 104, "0.1.3"), ("0.1.5", 105, "0.1.4")}
+    return tag == "os-v" + version and (version, sequence, previous) in allowed
+
+
 def main():
     source = os.environ["SOURCE_COMMIT"]
     approved = os.environ.get("APPROVED_COMMIT", "")
@@ -200,8 +206,7 @@ def main():
         fail("Source commit / channel not approved")
     proof, payload, internal, public = get_candidate(source, token)
     version = proof["version"]
-    allowed = {("0.1.4", 104, "0.1.3"), ("0.1.5", 105, "0.1.4")}
-    if tag != "os-v" + version or (version, sequence, previous) not in allowed:
+    if not release_target_valid(version, sequence, previous, tag):
         fail("Release must match a reviewed OS version, sequence and exact predecessor")
     if sha(public) != fingerprint:
         fail("Embedded OS trust key fingerprint does not match operator verification")
