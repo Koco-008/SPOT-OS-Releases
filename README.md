@@ -45,7 +45,7 @@ Copyright Â© SPOT contributors.
 # Anonymous post-publication verification
 
 See [the protected release procedure](RELEASE_PROCESS.md) for the exact OS
-0.1.6/106 compatibility policy, workflow inputs and
+0.1.6/106 prerelease and 0.1.7/107 stable compatibility policies, workflow inputs and
 `SPOT_OS_APPROVED_COMMIT` approval against the actual private `main` commit.
 
 The protected release workflow additionally re-downloads the four actual public
