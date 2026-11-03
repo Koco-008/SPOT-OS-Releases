@@ -14,7 +14,9 @@ Signed releases will be available under [Releases](https://github.com/Koco-008/S
 
 Each official OS release will contain the installation package, signed release metadata and integrity verification information.
 
-**Release status:** Initial release infrastructure is being prepared. No production OS release is available yet.
+**Release status:** Signed hardware-test prereleases are distributed through
+the existing protected signing workflow. Preparing a signer change does not
+publish a release or establish Raspberry Pi hardware acceptance.
 
 ## Security
 
@@ -41,6 +43,10 @@ Supported hardware and compatibility requirements are specified in each release.
 
 Copyright Â© SPOT contributors.
 # Anonymous post-publication verification
+
+See [the protected release procedure](RELEASE_PROCESS.md) for the exact OS
+0.1.6/106 compatibility policy, workflow inputs and
+`SPOT_OS_APPROVED_COMMIT` approval against the actual private `main` commit.
 
 The protected release workflow additionally re-downloads the four actual public
 assets without tokens, credential helpers, cookies or proxy credentials.

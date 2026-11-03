@@ -11,12 +11,15 @@ import verify_public as verifier
 
 
 class PublicVerificationTests(TestCase):
+    VERSION = '0.1.5'
+    SEQUENCE = 105
+
     def setUp(self):
         self.key=Ed25519PrivateKey.generate()
         public=self.key.public_key().public_bytes(Encoding.PEM,PublicFormat.SubjectPublicKeyInfo)
         self.fingerprint=hashlib.sha256(public).hexdigest()
-        contents={'spot_os/VERSION':b'0.1.5\n','spot_os/trust/spot-os-release.pub':public}
-        internal=dict(kind='os-installer',version='0.1.5',revision='signed-os-updates-1',app_version='unchanged',
+        contents={'spot_os/VERSION':(self.VERSION+'\n').encode(),'spot_os/trust/spot-os-release.pub':public}
+        internal=dict(schema=1,kind='os-installer',version=self.VERSION,revision='signed-os-updates-1',app_version='unchanged',
             files={n:hashlib.sha256(v).hexdigest() for n,v in contents.items()})
         contents['spot_os/PACKAGE.json']=json.dumps(internal).encode()
         stream=io.BytesIO()
@@ -24,19 +27,19 @@ class PublicVerificationTests(TestCase):
             for n,v in contents.items():archive.writestr(n,v)
         self.payload=stream.getvalue()
         self.data=dict(schema=1,kind='spot-os',repository=verifier.REPOSITORY,platform='raspios-debian13-aarch64',
-            tag='os-v0.1.5',version='0.1.5',revision='signed-os-updates-1',sequence=105,
-            asset='spot-os-0.1.5.zip',size=len(self.payload),sha256=hashlib.sha256(self.payload).hexdigest(),
+            tag='os-v'+self.VERSION,version=self.VERSION,revision='signed-os-updates-1',sequence=self.SEQUENCE,
+            asset='spot-os-'+self.VERSION+'.zip',size=len(self.payload),sha256=hashlib.sha256(self.payload).hexdigest(),
             source_commit='a'*40,channel='prerelease',notes='Test only',requires_os_min='0.1.4',requires_os_max='0.1.4',
             requires_app_min='0.28.13',reader_protocol=1,engine=1,reboot=False)
 
     def assets(self):
         raw=(json.dumps(self.data)+'\n').encode()
-        files={'spot-os-0.1.5.zip':self.payload,'os-update.json':raw,'os-update.json.sig':self.key.sign(raw)}
+        files={self.data['asset']:self.payload,'os-update.json':raw,'os-update.json.sig':self.key.sign(raw)}
         files['SHA256SUMS.txt']=''.join(hashlib.sha256(v).hexdigest()+'  '+n+'\n' for n,v in files.items()).encode()
         return files
 
     def verify(self,files=None,fingerprint=None):
-        return verifier.verify(files or self.assets(),'os-v0.1.5','a'*40,105,'0.1.4',fingerprint or self.fingerprint)
+        return verifier.verify(files or self.assets(),'os-v'+self.VERSION,'a'*40,self.SEQUENCE,'0.1.4',fingerprint or self.fingerprint)
 
     def test_complete_release_chain(self):
         proof=self.verify()
@@ -51,7 +54,7 @@ class PublicVerificationTests(TestCase):
         with self.assertRaises(InvalidSignature):self.verify(files)
 
     def test_zip_tampering_rejected(self):
-        files=self.assets();files['spot-os-0.1.5.zip']+=b'trailing change'
+        files=self.assets();files[self.data['asset']]+=b'trailing change'
         with self.assertRaisesRegex(ValueError,'ZIP'):self.verify(files)
 
     def test_checksums_rejected(self):
@@ -89,3 +92,56 @@ class PublicVerificationTests(TestCase):
         request=opener.open.call_args.args[0]
         self.assertEqual(request.headers,{'User-agent':'SPOT-OS-public-verifier'})
         self.assertEqual(build.call_args.args[0].proxies,{})
+
+
+class Public016VerificationTests(PublicVerificationTests):
+    VERSION = '0.1.6'
+    SEQUENCE = 106
+
+    def test_exact_016_contract_rejects_even_correctly_signed_wrong_metadata(self):
+        for field, values in {
+            'sequence': (105, 107), 'requires_app_min': ('0.28.12', '0.28.14'),
+            'requires_os_min': ('0.1.3', '0.1.5', '0.1.6'),
+            'requires_os_max': ('0.1.3', '0.1.5', '0.1.6'),
+            'channel': ('stable',), 'reboot': (True,), 'tag': ('os-v0.1.5',),
+        }.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    old = self.data[field]
+                    self.data[field] = value
+                    with self.assertRaisesRegex(ValueError, 'compatibility'):
+                        self.verify()
+                    self.data[field] = old
+
+    def test_signer_to_public_verifier_roundtrip(self):
+        """Exercise actual signing with the existing ephemeral test identity only."""
+        import tempfile
+        from pathlib import Path
+        from cryptography.hazmat.primitives.serialization import PrivateFormat, NoEncryption
+        import sign_candidate as signer
+        contents = verifier.archive_members(self.payload)
+        proof = dict(version=self.VERSION, asset=self.data['asset'], size=len(self.payload),
+                     sha256=hashlib.sha256(self.payload).hexdigest())
+        internal = json.loads(contents['spot_os/PACKAGE.json'])
+        env = dict(SOURCE_COMMIT='a'*40, APPROVED_COMMIT='a'*40, SIGNING_ENABLED='true',
+            SOURCE_ACTIONS_TOKEN='test-only', PUBLIC_KEY_SHA256=self.fingerprint,
+            OS_SIGNING_KEY=self.key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode(),
+            RELEASE_TAG='os-v0.1.6', RELEASE_SEQUENCE='106', PREVIOUS_OS='0.1.4', RELEASE_CHANNEL='prerelease')
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)/'out'
+            with mock.patch.dict(signer.os.environ, env, clear=True), mock.patch.object(signer, 'Path', return_value=out), \
+                    mock.patch.object(signer, 'get_candidate', return_value=(proof,self.payload,internal,contents['spot_os/trust/spot-os-release.pub'])):
+                signer.main()
+            self.assertTrue(self.verify({p.name:p.read_bytes() for p in out.iterdir()})['signature_valid'])
+
+    def test_signer_rejects_unapproved_commit_or_stable_channel_before_candidate_access(self):
+        import sign_candidate as signer
+        env = dict(SOURCE_COMMIT='a'*40, APPROVED_COMMIT='a'*40, SIGNING_ENABLED='true',
+            SOURCE_ACTIONS_TOKEN='test-only', OS_SIGNING_KEY='not-loaded', PUBLIC_KEY_SHA256='0'*64,
+            RELEASE_TAG='os-v0.1.6', RELEASE_SEQUENCE='106', PREVIOUS_OS='0.1.4', RELEASE_CHANNEL='prerelease')
+        for field,value in (('APPROVED_COMMIT','b'*40),('RELEASE_CHANNEL','stable')):
+            with mock.patch.dict(signer.os.environ, dict(env, **{field:value}), clear=True), \
+                    mock.patch.object(signer,'get_candidate') as candidate:
+                with self.assertRaisesRegex(RuntimeError,'not approved'):
+                    signer.main()
+                candidate.assert_not_called()

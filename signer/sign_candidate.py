@@ -16,6 +16,12 @@ SOURCE_REPO_ID = 1420310429
 PUBLISH = "Koco-008/SPOT-OS-Releases"
 WORKFLOW = "os-candidate.yml"
 MAX = 32 * 1024 * 1024
+RELEASES = {
+    # version: (sequence, exact predecessor, minimum app)
+    "0.1.4": (104, "0.1.3", "0.28.12"),
+    "0.1.5": (105, "0.1.4", "0.28.13"),
+    "0.1.6": (106, "0.1.4", "0.28.13"),
+}
 
 
 def fail(message):
@@ -27,7 +33,8 @@ def sha(raw):
 
 
 def github(path, token, *, binary=False):
-    if not (path.startswith(f"repos/{SOURCE}/actions/") or path.startswith(f"repos/{SOURCE}/releases")):
+    if not (path.startswith(f"repos/{SOURCE}/actions/") or path.startswith(f"repos/{SOURCE}/releases")
+            or path == f"repos/{SOURCE}/branches/main"):
         fail("Invalid source API path")
     url = "https://api.github.com/" + path
     request = urllib.request.Request(url, headers={
@@ -86,9 +93,16 @@ def archive_members(data, *, outer=False):
     return result
 
 
+def require_current_main(commit, token):
+    branch = github(f"repos/{SOURCE}/branches/main", token)
+    if branch.get("name") != "main" or branch.get("commit", {}).get("sha") != commit:
+        fail("Reviewed source must be the current private main commit")
+
+
 def get_candidate(commit, token):
     if not re.fullmatch("[a-f0-9]{40}", commit):
         fail("Full reviewed SHA required")
+    require_current_main(commit, token)
     runs = github(f"repos/{SOURCE}/actions/workflows/{WORKFLOW}/runs?head_sha={commit}&event=push&status=success&per_page=100", token)
     matches = [
         r for r in runs.get("workflow_runs", [])
@@ -180,13 +194,16 @@ def get_candidate(commit, token):
     public = payloads.get("spot_os/trust/spot-os-release.pub")
     if not public:
         fail("No embedded independent OS trust key")
+    # Fail closed if main advanced while CI provenance and bytes were checked.
+    require_current_main(commit, token)
     return proof, payload, internal, public
 
 
 def release_target_valid(version, sequence, previous, tag):
     """Only explicitly reviewed predecessor/sequence pairs may be released."""
-    allowed = {("0.1.4", 104, "0.1.3"), ("0.1.5", 105, "0.1.4")}
-    return tag == "os-v" + version and (version, sequence, previous) in allowed
+    target = RELEASES.get(version)
+    return (type(sequence) is int and target is not None and tag == "os-v" + version
+            and (sequence, previous) == target[:2])
 
 
 def main():
@@ -202,7 +219,7 @@ def main():
     channel = os.environ["RELEASE_CHANNEL"]
     if enabled != "true" or not token or not key or not re.fullmatch("[a-f0-9]{64}", fingerprint):
         fail("Release disabled or missing operator provisioning")
-    if approved != source or channel not in ("stable", "prerelease"):
+    if approved != source or channel != "prerelease":
         fail("Source commit / channel not approved")
     proof, payload, internal, public = get_candidate(source, token)
     version = proof["version"]
@@ -226,7 +243,7 @@ def main():
         "source_commit": source, "channel": channel,
         "notes": "Protected signed SPOT OS " + version + " hardware candidate",
         "requires_os_min": previous, "requires_os_max": previous,
-        "requires_app_min": "0.28.13" if version == "0.1.5" else "0.28.12",
+        "requires_app_min": RELEASES[version][2],
         "reader_protocol": 1, "engine": 1,
         "reboot": False,
     }
