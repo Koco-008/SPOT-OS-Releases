@@ -15,8 +15,8 @@ jobs:
           python-version: '3.13'
       - name: Validate Python and workflow YAML without secrets
         run: |
-          python -m py_compile signer/sign_candidate.py
-          python -m pip install 'PyYAML==6.0.2'
+          python -m py_compile signer/sign_candidate.py signer/verify_public.py
+          python -m pip install 'PyYAML==6.0.2' 'cryptography==44.0.3'
           python - <<'PY'
           import yaml
           from pathlib import Path
@@ -43,3 +43,5 @@ jobs:
           assert 'inputs.tag' in workflow
           print('Signer invariants OK (not a substitute for security review)')
           PY
+      - name: Verify existing OS 0.1.4 public transport and signature without tokens
+        run: python signer/verify_public.py --tag os-v0.1.4 --commit c8c10f2c016a6a8a46ac313b75a51d8d79979889 --sequence 104 --previous 0.1.3 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907 --output /tmp/public-os014-proof.json

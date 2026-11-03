@@ -1,4 +1,4 @@
-# SPOT OS – Official Releases
+# SPOT OS â€“ Official Releases
 
 Official release repository for **SPOT OS**, a Raspberry Pi 5-based operating environment for the SPOT thermal imaging application.
 
@@ -39,4 +39,19 @@ Supported hardware and compatibility requirements are specified in each release.
 
 ---
 
-Copyright © SPOT contributors.
+Copyright Â© SPOT contributors.
+# Anonymous post-publication verification
+
+The protected release workflow additionally re-downloads the four actual public
+assets without tokens, credential helpers, cookies or proxy credentials.
+`signer/verify_public.py` checks the independently pinned OS public-key hash,
+Ed25519 signature, exact predecessor/sequence/app/channel/source metadata, ZIP
+digest and every packaged member. It never executes downloaded package code.
+Existing signer identity, approved-main CI provenance and required environment
+review remain unchanged. No release is dispatched by these tests.
+
+Standalone verification after the operator-approved 0.1.5 publication:
+
+```sh
+python signer/verify_public.py --tag os-v0.1.5 --commit FULL_TESTED_MAIN_SHA --sequence 105 --previous 0.1.4 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907
+```

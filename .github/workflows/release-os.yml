@@ -67,3 +67,11 @@ jobs:
           test "$(find published -maxdepth 1 -type f | wc -l)" -eq 4
           for file in "spot-os-${version}.zip" os-update.json os-update.json.sig SHA256SUMS.txt; do cmp "out/$file" "published/$file"; done
           ( cd published && sha256sum --check SHA256SUMS.txt )
+      - name: Verify public download without credentials and existing OS identity
+        env:
+          TAG: ${{ inputs.tag }}
+          SOURCE: ${{ inputs.source_commit }}
+          SEQUENCE: ${{ inputs.sequence }}
+          PREVIOUS: ${{ inputs.previous_os }}
+          FINGERPRINT: ${{ vars.SPOT_OS_PUBLIC_KEY_SHA256 }}
+        run: python signer/verify_public.py --tag "$TAG" --commit "$SOURCE" --sequence "$SEQUENCE" --previous "$PREVIOUS" --fingerprint "$FINGERPRINT"
