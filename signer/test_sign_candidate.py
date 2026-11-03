@@ -63,6 +63,8 @@ class ReleaseCandidateTests(TestCase):
     def github_mock(self, proof, assets, release, log_hash=None, completed=True):
         ci_digest = log_hash if log_hash is not None else proof["sha256"]
         def call(path, token, *, binary=False):
+            if path == f"repos/{signer.SOURCE}/branches/main":
+                return {"name": "main", "commit": {"sha": COMMIT}}
             if "/actions/workflows/" in path:
                 return {"workflow_runs": [{
                     "head_sha": COMMIT, "head_branch": "main",
@@ -100,20 +102,116 @@ class ReleaseCandidateTests(TestCase):
         self.assertEqual(p["asset"], "spot-os-0.1.5.zip")
         self.assertEqual(raw, payload)
 
+    def test_valid_016_ci_binds_exact_candidate_bytes(self):
+        proof, payload, assets, release = self.setup_values("0.1.6")
+        with mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
+            p, raw, _, _ = signer.get_candidate(COMMIT, "not-a-real-token")
+        self.assertEqual(p["asset"], "spot-os-0.1.6.zip")
+        self.assertEqual(raw, payload)
+
+    def test_016_rejects_wrong_ci_provenance(self):
+        proof, _, assets, release = self.setup_values("0.1.6")
+        base = self.github_mock(proof, assets, release)
+        for field, value in (("conclusion", "failure"), ("head_sha", "b" * 40),
+                ("head_branch", "feature"), ("event", "workflow_dispatch"),
+                ("event", "pull_request"), ("run_attempt", 2),
+                ("repository", {"id": 1}), ("path", ".github/workflows/other.yml")):
+            with self.subTest(field=field, value=value):
+                def altered(path, token, *, binary=False):
+                    result = base(path, token, binary=binary)
+                    if "/actions/workflows/" in path:
+                        result["workflow_runs"][0][field] = value
+                    return result
+                with mock.patch.object(signer, "github", altered):
+                    with self.assertRaises(RuntimeError):
+                        signer.get_candidate(COMMIT, "fake")
+
+    def test_016_rejects_noncurrent_main_and_main_advancing_during_verification(self):
+        proof, _, assets, release = self.setup_values("0.1.6")
+        base = self.github_mock(proof, assets, release)
+        for advance_after in (0, 1):
+            calls = []
+            def altered(path, token, *, binary=False):
+                result = base(path, token, binary=binary)
+                if path.endswith("/branches/main"):
+                    calls.append(path)
+                    if len(calls) > advance_after:
+                        result["commit"]["sha"] = "b" * 40
+                return result
+            with self.subTest(advance_after=advance_after), mock.patch.object(signer, "github", altered):
+                with self.assertRaisesRegex(RuntimeError, "current private main"):
+                    signer.get_candidate(COMMIT, "fake")
+
+    def test_016_rejects_wrong_staging_or_proof_commit(self):
+        for target in ("release", "proof"):
+            proof, _, assets, release = self.setup_values("0.1.6")
+            if target == "release":
+                release["target_commitish"] = "b" * 40
+            else:
+                proof["source_commit"] = "b" * 40
+                assets[11] = json.dumps(proof).encode()
+                release["assets"][1]["size"] = len(assets[11])
+            with self.subTest(target=target), mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
+                with self.assertRaises(RuntimeError):
+                    signer.get_candidate(COMMIT, "fake")
+
+    def test_016_rejects_failed_build_job_even_if_run_claims_success(self):
+        proof, _, assets, release = self.setup_values("0.1.6")
+        base = self.github_mock(proof, assets, release)
+        def altered(path, token, *, binary=False):
+            result = base(path, token, binary=binary)
+            if "/actions/runs/500/jobs" in path:
+                result["jobs"][0]["conclusion"] = "failure"
+            return result
+        with mock.patch.object(signer, "github", altered):
+            with self.assertRaisesRegex(RuntimeError, "job not complete"):
+                signer.get_candidate(COMMIT, "fake")
+
+    def test_016_rejects_tampered_zip_with_unchanged_proof(self):
+        proof, _, assets, release = self.setup_values("0.1.6")
+        assets[10] += b"tampered"
+        release["assets"][0]["size"] = len(assets[10])
+        with mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
+            with self.assertRaisesRegex(RuntimeError, "ZIP differs from proof"):
+                signer.get_candidate(COMMIT, "fake")
+
+    def test_016_rejects_tampered_inner_member_even_with_matching_outer_digest(self):
+        proof, payload, assets, release = self.setup_values("0.1.6")
+        files = signer.archive_members(payload)
+        files["spot_os/cli.py"] += b"changed"
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            for name, raw in files.items():
+                archive.writestr(name, raw)
+        assets[10] = stream.getvalue()
+        proof.update(size=len(assets[10]), sha256=sha(assets[10]))
+        assets[11] = json.dumps(proof).encode()
+        for asset in release["assets"]:
+            asset["size"] = len(assets[asset["id"]])
+        with mock.patch.object(signer, "github", self.github_mock(proof, assets, release)):
+            with self.assertRaisesRegex(RuntimeError, "Damaged inner member"):
+                signer.get_candidate(COMMIT, "fake")
+
     def test_only_reviewed_release_sequences_and_predecessors(self):
         self.assertTrue(signer.release_target_valid("0.1.4", 104, "0.1.3", "os-v0.1.4"))
         self.assertTrue(signer.release_target_valid("0.1.5", 105, "0.1.4", "os-v0.1.5"))
+        self.assertTrue(signer.release_target_valid("0.1.6", 106, "0.1.4", "os-v0.1.6"))
         for version, sequence, previous, tag in (
             ("0.1.5", 104, "0.1.4", "os-v0.1.5"),
             ("0.1.5", 105, "0.1.3", "os-v0.1.5"),
             ("0.1.5", 105, "0.1.5", "os-v0.1.5"),
             ("0.1.5", 105, "0.1.4", "os-v0.1.4"),
             ("0.1.6", 106, "0.1.5", "os-v0.1.6"),
+            ("0.1.6", 105, "0.1.4", "os-v0.1.6"),
+            ("0.1.6", 107, "0.1.4", "os-v0.1.6"),
+            ("0.1.6", 106, "0.1.3", "os-v0.1.6"),
+            ("0.1.6", 106, "0.1.6", "os-v0.1.6"),
+            ("0.1.6", 106, "0.1.4", "os-v0.1.5"),
         ):
             self.assertFalse(signer.release_target_valid(version, sequence, previous, tag))
 
     def test_changed_private_release_zip_and_proof_rejected_by_immutable_ci_digest(self):
-        proof, payload, assets, release = self.setup_values()
+        proof, payload, assets, release = self.setup_values("0.1.6")
         good_digest = proof["sha256"]
         altered = payload + b"junk"
         proof["sha256"], proof["size"] = sha(altered), len(altered)

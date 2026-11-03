@@ -7,7 +7,7 @@ import re
 import urllib.request
 from urllib.parse import urlsplit
 
-from sign_candidate import archive_members, release_target_valid, MAX
+from sign_candidate import archive_members, release_target_valid, RELEASES, MAX
 
 REPOSITORY = 'Koco-008/SPOT-OS-Releases'
 FIELDS = {'schema','kind','repository','platform','tag','version','revision','sequence',
@@ -71,7 +71,7 @@ def verify(files, tag, commit, sequence, previous, fingerprint):
         or data['asset'] != asset or data['sequence'] != sequence or type(data['sequence']) is not int
         or not release_target_valid(version, sequence, previous, tag)
         or data['requires_os_min'] != previous or data['requires_os_max'] != previous
-        or data['requires_app_min'] != ('0.28.13' if version == '0.1.5' else '0.28.12')
+        or data['requires_app_min'] != RELEASES[version][2]
         or data['channel'] != 'prerelease' or data['reboot'] is not False
         or data['reader_protocol'] != 1 or type(data['reader_protocol']) is not int
         or data['engine'] != 1 or type(data['engine']) is not int or type(data['size']) is not int):
