@@ -1,4 +1,4 @@
-# SPOT OS â€“ Official Releases
+# SPOT OS – Official Releases
 
 Official release repository for **SPOT OS**, a Raspberry Pi 5-based operating environment for the SPOT thermal imaging application.
 
@@ -14,9 +14,7 @@ Signed releases will be available under [Releases](https://github.com/Koco-008/S
 
 Each official OS release will contain the installation package, signed release metadata and integrity verification information.
 
-**Release status:** Signed hardware-test prereleases are distributed through
-the existing protected signing workflow. Preparing a signer change does not
-publish a release or establish Raspberry Pi hardware acceptance.
+**Release channels:** Earlier signed OS versions are prereleases. OS 0.1.7 is the next proposed stable release, strictly gated by reviewed source CI, operator authorization and the existing protected Ed25519 signing workflow. Do not interpret an unsigned candidate or green CI as an already published stable release.
 
 ## Security
 
@@ -41,7 +39,7 @@ Supported hardware and compatibility requirements are specified in each release.
 
 ---
 
-Copyright Â© SPOT contributors.
+Copyright © SPOT contributors.
 # Anonymous post-publication verification
 
 See [the protected release procedure](RELEASE_PROCESS.md) for the exact OS
@@ -56,8 +54,10 @@ digest and every packaged member. It never executes downloaded package code.
 Existing signer identity, approved-main CI provenance and required environment
 review remain unchanged. No release is dispatched by these tests.
 
-Standalone verification after the operator-approved 0.1.5 publication:
+Standalone verification **after official publication of OS 0.1.7 stable** (replace the commit with the actual approved private `main` SHA):
 
 ```sh
-python signer/verify_public.py --tag os-v0.1.5 --commit FULL_TESTED_MAIN_SHA --sequence 105 --previous 0.1.4 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907
+python signer/verify_public.py --tag os-v0.1.7 --commit FULL_APPROVED_PRIVATE_MAIN_SHA --sequence 107 --previous 0.1.6 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907
 ```
+
+OS 0.1.7 is prepared for the stable channel; the public release exists only after the protected signing workflow has completed and the anonymous verifier has passed. The completed OS 0.1.6 hardware test does not itself verify 0.1.7 hardware.
