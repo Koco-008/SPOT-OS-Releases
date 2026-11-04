@@ -17,10 +17,11 @@ PUBLISH = "Koco-008/SPOT-OS-Releases"
 WORKFLOW = "os-candidate.yml"
 MAX = 32 * 1024 * 1024
 RELEASES = {
-    # version: (sequence, exact predecessor, minimum app)
-    "0.1.4": (104, "0.1.3", "0.28.12"),
-    "0.1.5": (105, "0.1.4", "0.28.13"),
-    "0.1.6": (106, "0.1.4", "0.28.13"),
+    # version: (sequence, exact predecessor, minimum app, exact channel)
+    "0.1.4": (104, "0.1.3", "0.28.12", "prerelease"),
+    "0.1.5": (105, "0.1.4", "0.28.13", "prerelease"),
+    "0.1.6": (106, "0.1.4", "0.28.13", "prerelease"),
+    "0.1.7": (107, "0.1.6", "0.28.13", "stable"),
 }
 
 
@@ -206,6 +207,12 @@ def release_target_valid(version, sequence, previous, tag):
             and (sequence, previous) == target[:2])
 
 
+def channel_valid(version, channel, stable_enabled="", hardware_approved=""):
+    target = RELEASES.get(version)
+    return (target is not None and channel == target[3] and
+            (channel != "stable" or (stable_enabled == "true" and hardware_approved == "true")))
+
+
 def main():
     source = os.environ["SOURCE_COMMIT"]
     approved = os.environ.get("APPROVED_COMMIT", "")
@@ -219,12 +226,17 @@ def main():
     channel = os.environ["RELEASE_CHANNEL"]
     if enabled != "true" or not token or not key or not re.fullmatch("[a-f0-9]{64}", fingerprint):
         fail("Release disabled or missing operator provisioning")
-    if approved != source or channel != "prerelease":
+    stable_enabled = os.environ.get("STABLE_RELEASES_ENABLED", "")
+    hardware_approved = os.environ.get("HARDWARE_APPROVED", "")
+    if approved != source or channel not in ("prerelease", "stable") or (channel == "stable" and
+            (stable_enabled != "true" or hardware_approved != "true")):
         fail("Source commit / channel not approved")
     proof, payload, internal, public = get_candidate(source, token)
     version = proof["version"]
     if not release_target_valid(version, sequence, previous, tag):
         fail("Release must match a reviewed OS version, sequence and exact predecessor")
+    if not channel_valid(version, channel, stable_enabled, hardware_approved):
+        fail("Release channel / stable hardware approval not approved")
     if sha(public) != fingerprint:
         fail("Embedded OS trust key fingerprint does not match operator verification")
     from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key, Encoding, PublicFormat

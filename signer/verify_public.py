@@ -47,7 +47,7 @@ def download(tag, name):
     return raw
 
 
-def verify(files, tag, commit, sequence, previous, fingerprint):
+def verify(files, tag, commit, sequence, previous, fingerprint, release=None):
     if not re.fullmatch(r'os-v0\.[0-9]+\.[0-9]+', tag) or not re.fullmatch('[a-f0-9]{40}', commit):
         raise ValueError('Exact release tag and source commit required')
     version = tag[4:]
@@ -72,10 +72,14 @@ def verify(files, tag, commit, sequence, previous, fingerprint):
         or not release_target_valid(version, sequence, previous, tag)
         or data['requires_os_min'] != previous or data['requires_os_max'] != previous
         or data['requires_app_min'] != RELEASES[version][2]
-        or data['channel'] != 'prerelease' or data['reboot'] is not False
+        or data['channel'] != RELEASES[version][3] or data['reboot'] is not False
         or data['reader_protocol'] != 1 or type(data['reader_protocol']) is not int
         or data['engine'] != 1 or type(data['engine']) is not int or type(data['size']) is not int):
         raise ValueError('Published OS compatibility/provenance differs')
+    if release is not None and (release.get('tag_name')!=tag or release.get('draft') is not False
+            or type(release.get('prerelease')) is not bool
+            or release['prerelease']!=(data['channel']=='prerelease')):
+        raise ValueError('GitHub release marking differs from signed channel')
     if len(files[asset]) != data['size'] or hashlib.sha256(files[asset]).hexdigest() != data['sha256']:
         raise ValueError('Published ZIP differs from signed manifest')
     checks = files['SHA256SUMS.txt'].decode('ascii').splitlines()
@@ -101,7 +105,23 @@ def verify(files, tag, commit, sequence, previous, fingerprint):
         raise ValueError('Published version file differs')
     return dict(tag=tag,source_commit=commit,zip_sha256=data['sha256'],signature_valid=True,
         key_sha256=fingerprint,all_members_verified=True,files=len(payloads),
-        compatible_from_os=previous,requires_app_min=data['requires_app_min'],prerelease=True)
+        compatible_from_os=previous,requires_app_min=data['requires_app_min'],prerelease=data['channel']=='prerelease')
+
+
+def release_metadata(tag):
+    if not re.fullmatch(r'os-v0\.[0-9]+\.[0-9]+', tag):
+        raise ValueError('Invalid tag')
+    request=urllib.request.Request('https://api.github.com/repos/'+REPOSITORY+'/releases/tags/'+tag,
+        headers={'User-Agent':'SPOT-OS-public-verifier','Accept':'application/vnd.github+json'})
+    # The metadata endpoint must not redirect to another origin.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args):raise ValueError('Unexpected metadata redirect')
+    with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(request,timeout=60) as response:
+        raw=response.read(65537)
+    if len(raw)>65536:raise ValueError('Oversized public release metadata')
+    data=parse(raw)
+    if not isinstance(data,dict):raise ValueError('Invalid release metadata')
+    return data
 
 
 def main():
@@ -112,7 +132,7 @@ def main():
     args=parser.parse_args()
     if not re.fullmatch(r'os-v0\.[0-9]+\.[0-9]+',args.tag):raise ValueError('Invalid tag')
     files={n:download(args.tag,n) for n in ('spot-os-'+args.tag[4:]+'.zip','os-update.json','os-update.json.sig','SHA256SUMS.txt')}
-    proof=verify(files,args.tag,args.commit,args.sequence,args.previous,args.fingerprint)
+    proof=verify(files,args.tag,args.commit,args.sequence,args.previous,args.fingerprint,release_metadata(args.tag))
     proof['public_download_without_credentials']=True
     args.output.write_text(json.dumps(proof,indent=2)+'\n')
     print(json.dumps(proof))

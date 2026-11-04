@@ -6,7 +6,8 @@ on:
       tag: {type: string, required: true}
       sequence: {type: number, required: true}
       previous_os: {type: string, required: true}
-      channel: {type: choice, options: [prerelease], default: prerelease}
+      channel: {type: choice, options: [prerelease, stable], default: prerelease}
+      hardware_approved: {type: boolean, default: false, required: true}
 permissions:
   contents: read
 jobs:
@@ -41,6 +42,8 @@ jobs:
           RELEASE_SEQUENCE: ${{ inputs.sequence }}
           PREVIOUS_OS: ${{ inputs.previous_os }}
           RELEASE_CHANNEL: ${{ inputs.channel }}
+          STABLE_RELEASES_ENABLED: ${{ vars.SPOT_OS_STABLE_RELEASES_ENABLED }}
+          HARDWARE_APPROVED: ${{ inputs.hardware_approved }}
         run: python signer/sign_candidate.py
       - name: Ensure tag/release does not exist
         env:
@@ -60,7 +63,13 @@ jobs:
           version="${TAG#os-v}"
           test "$TAG" = "os-v${version}"
           test -f "out/spot-os-${version}.zip"
-          gh release create "$TAG" "out/spot-os-${version}.zip" out/os-update.json out/os-update.json.sig out/SHA256SUMS.txt --prerelease --draft --target "$GITHUB_SHA" --title "SPOT OS ${version} hardware OTA candidate" --notes "Reviewed private source commit: $SOURCE_COMMIT"
+          channel="$(python -c 'import json; print(json.load(open("out/os-update.json"))["channel"])')"
+          case "$channel" in
+            prerelease) release_flags=(--prerelease) ;;
+            stable) release_flags=(--prerelease=false) ;;
+            *) echo "Invalid signed channel"; exit 1 ;;
+          esac
+          gh release create "$TAG" "out/spot-os-${version}.zip" out/os-update.json out/os-update.json.sig out/SHA256SUMS.txt "${release_flags[@]}" --draft --target "$GITHUB_SHA" --title "SPOT OS ${version} (${channel})" --notes "Reviewed private source commit: $SOURCE_COMMIT"
           gh release edit "$TAG" --draft=false
           mkdir published
           gh release download "$TAG" --dir published
