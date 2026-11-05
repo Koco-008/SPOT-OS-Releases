@@ -16,7 +16,7 @@ Signed releases will be available under [Releases](https://github.com/Koco-008/S
 
 Each official OS release will contain the installation package, signed release metadata and integrity verification information.
 
-**Release channels:** Earlier signed OS versions are prereleases. OS 0.1.7 is the next proposed stable release, strictly gated by reviewed source CI, operator authorization and the existing protected Ed25519 signing workflow. Do not interpret an unsigned candidate or green CI as an already published stable release.
+**Release channels:** OS 0.1.7 is already published as a signed **Stable** release. Earlier OS versions may be prereleases. An unsigned source build is not an official OTA package.
 
 ## Security
 
@@ -30,6 +30,8 @@ Official automatic updates are cryptographically verified using Ed25519 digital 
 ## Source Code and Licensing
 
 SPOT OS is open-source software licensed under the MIT License. OS runtime source code and relevant license information are included in the distributed source packages.
+
+The complete public OS 0.1.7 runtime source, build instructions and tests are available in **[SPOT-OS](https://github.com/Koco-008/SPOT-OS)**. The project-wide hardware and build guide is **[SPOT](https://github.com/Koco-008/SPOT)**. This repository remains the **only official signed SPOT OS release channel**.
 
 This repository contains release artifacts, not the private development history.
 
@@ -56,10 +58,10 @@ digest and every packaged member. It never executes downloaded package code.
 Existing signer identity, approved-main CI provenance and required environment
 review remain unchanged. No release is dispatched by these tests.
 
-Standalone verification **after official publication of OS 0.1.7 stable** (replace the commit with the actual approved private `main` SHA):
+Standalone verification for the already published OS 0.1.7 Stable (approved original private source SHA `0e21c1965a4c0eb9238fa9355abe4cf4f48db36a`):
 
 ```sh
-python signer/verify_public.py --tag os-v0.1.7 --commit FULL_APPROVED_PRIVATE_MAIN_SHA --sequence 107 --previous 0.1.6 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907
+python signer/verify_public.py --tag os-v0.1.7 --commit 0e21c1965a4c0eb9238fa9355abe4cf4f48db36a --sequence 107 --previous 0.1.6 --fingerprint b142b246c22fd6f56f4207b86bbd5dcef09b122d228af81c0c51130d4309f907
 ```
 
-OS 0.1.7 is prepared for the stable channel; the public release exists only after the protected signing workflow has completed and the anonymous verifier has passed. The completed OS 0.1.6 hardware test does not itself verify 0.1.7 hardware.
+OS 0.1.7 has been signed and published as Stable; the subsequent operator test on the original SPOT BMA hardware was confirmed. Future releases continue to require the protected independent signing workflow and their own hardware approval.
