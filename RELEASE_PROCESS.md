@@ -27,7 +27,7 @@ Historical prereleases remain verifiable without these gates.
 ## Historical 0.1.6 prerelease procedure (archived; do not use for OS 0.1.7)
 
 1. Review and merge the public signer PR. Select `main` in this repository.
-2. Read the **current** `main` SHA of private `Koco-008/SPOT`. Use all 40 lower-case
+2. Read the **current** `main` SHA of private `Koco-008/SPOT-App`. Use all 40 lower-case
    hexadecimal characters. A feature branch SHA or a historical main SHA is
    insufficient, even if it has successful CI.
 3. Wait for `.github/workflows/os-candidate.yml` at exactly that SHA: event

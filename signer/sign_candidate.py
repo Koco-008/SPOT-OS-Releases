@@ -11,7 +11,7 @@ import urllib.error
 from urllib.parse import urlsplit
 import zipfile
 
-SOURCE = "Koco-008/SPOT"
+SOURCE = "Koco-008/SPOT-App"
 SOURCE_REPO_ID = 1420310429
 PUBLISH = "Koco-008/SPOT-OS-Releases"
 WORKFLOW = "os-candidate.yml"
