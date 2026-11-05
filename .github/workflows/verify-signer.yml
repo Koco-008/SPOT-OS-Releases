@@ -34,7 +34,7 @@ jobs:
           script=Path('signer/sign_candidate.py').read_text()
           workflow=Path('.github/workflows/release-os.yml').read_text()
           assert 'SOURCE_REPO_ID = 1420310429' in script
-          assert 'SOURCE = "Koco-008/SPOT"' in script
+          assert 'SOURCE = "Koco-008/SPOT-App"' in script
           assert 'private.sign(raw)' in script
           assert 'environment: spot-os-release' in workflow
           assert 'source_commit' in workflow
