@@ -1,3 +1,5 @@
+> **Repository-Aufteilung (05.11.2026):** [SPOT](https://github.com/Koco-008/SPOT) ist das öffentliche Gesamtprojekt mit Nachbauanleitung. Das Quell-/CI-Repository heisst jetzt **`Koco-008/SPOT-App`** (gleiche GitHub-Repository-ID). Der signierte BMA-Endstand **SPOT OS 0.1.7 Stable** bleibt [hier](https://github.com/Koco-008/SPOT-OS-Releases/releases/tag/os-v0.1.7) unverändert. Künftige Freigaben verwenden weiter ausschliesslich den geschützten öffentlichen Signierworkflow.
+
 # SPOT OS – Official Releases
 
 Official release repository for **SPOT OS**, a Raspberry Pi 5-based operating environment for the SPOT thermal imaging application.
